@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/jlpt_vocab_master.iml" filepath="$PROJECT_DIR$/.idea/jlpt_vocab_master.iml" />
+      <module fileurl="file://$PROJECT_DIR$/android/jlpt_vocab_master_android.iml" filepath="$PROJECT_DIR$/android/jlpt_vocab_master_android.iml" />
     </modules>
   </component>
 </project>

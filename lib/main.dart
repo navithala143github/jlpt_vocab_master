@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gsheets/gsheets.dart';
+import 'package:scroll_to_index/scroll_to_index.dart';
+
+import 'memory.dart';
 
 void main() {
   runApp(MyApp());
@@ -15,6 +18,13 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   ThemeMode _themeMode = ThemeMode.light;
+  final preferencesManagers = PreferencesManager();
+  AutoScrollController controllers = AutoScrollController();
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+  }
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -53,16 +63,35 @@ class _MyAppState extends State<MyApp> {
                    ),
                 ],
               )),
+          actions: [
+            IconButton(onPressed: ()async{
+              int bookmark = await getBookmark();
+              controllers.scrollToIndex(
+                bookmark,
+                preferPosition: AutoScrollPosition.begin,
+                duration: const Duration(milliseconds: 500),
+              );
+            }, icon: const Icon(Icons.bookmark))
+          ],
         ),
         body: Center(
-          child: GoogleSheetsExample(),
+          child: GoogleSheetsExample((AutoScrollController controller ){
+            controllers =controller;
+          }),
         ),
       ),
     );
   }
+  Future<int> getBookmark()async{
+    await preferencesManagers.initPreferences();
+    return preferencesManagers.getIntValue("bookmark");
+  }
 }
 
+
 class GoogleSheetsExample extends StatefulWidget {
+  Function scrollController;
+  GoogleSheetsExample(this.scrollController);
   @override
   _GoogleSheetsExampleState createState() => _GoogleSheetsExampleState();
 }
@@ -76,9 +105,10 @@ class _GoogleSheetsExampleState extends State<GoogleSheetsExample> {
   List<List<String>> filteredData = [];
   final Debouncer _debounce = Debouncer(milliseconds: 500);
   final TextEditingController _searchController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
   bool _isLoading =false;
   bool hideAll =false;
+  AutoScrollController controller =AutoScrollController();
+  final preferencesManager = PreferencesManager();
 
 
   @override
@@ -92,6 +122,11 @@ class _GoogleSheetsExampleState extends State<GoogleSheetsExample> {
       final String jsonString = await rootBundle.loadString('assets/credentials.json');
       final Map<String, dynamic> jsonData = json.decode(jsonString);
       googleSheet = GSheets(jsonData);
+      controller = AutoScrollController(
+          viewportBoundaryGetter: () =>
+              Rect.fromLTRB(0, 0, 0, MediaQuery.of(context).padding.bottom),
+          axis: Axis.vertical);
+      widget.scrollController(controller);
       loadSheet();
     } catch (error) {
       final snackBar = SnackBar(
@@ -125,6 +160,10 @@ class _GoogleSheetsExampleState extends State<GoogleSheetsExample> {
       });
     }
   }
+  setBookmark(int value)async{
+    await preferencesManager.initPreferences();
+    await preferencesManager.setIntValue('bookmark', value);
+  }
 
   void performSearch() {
     setState(() {
@@ -136,13 +175,12 @@ class _GoogleSheetsExampleState extends State<GoogleSheetsExample> {
           }
         }
         return false; // Return false if no values match the search term
+        return false; // Return false if no values match the search term
       }).toList();
     });
-    _scrollController.animateTo(
-      0.0,
-      duration: const Duration(milliseconds: 500), // Adjust the duration as needed
-      curve: Curves.easeInOut,
-    );
+    controller.scrollToIndex(0,
+        duration: const Duration(microseconds: 500),
+        preferPosition: AutoScrollPosition.begin);
 
   }
 
@@ -229,11 +267,17 @@ class _GoogleSheetsExampleState extends State<GoogleSheetsExample> {
          Expanded(
            child:filteredData.isNotEmpty? Scrollbar(
              child: ListView.builder(
-               controller: _scrollController,
+               controller: controller,
               itemCount: filteredData.length,
               itemBuilder: (context, index) {
                 final row = filteredData[index];
-                return MyCardWidget(index: index, row: row,hide: hideAll);
+                return AutoScrollTag(
+                  key: ValueKey(index),
+                  controller: controller,
+                    index: index,
+                    child: MyCardWidget(index: index, row: row,hide: hideAll,longPress: (int value){
+                      setBookmark(value);
+                    },));
               },
     ),
            ):Center(
@@ -313,11 +357,13 @@ class MyCardWidget extends StatefulWidget {
   final int index;
   final List<dynamic> row;
   bool hide;
+  Function longPress;
 
   MyCardWidget({
     required this.index,
     required this.row,
     required this.hide,
+    required this.longPress,
   });
 
   @override
@@ -335,6 +381,9 @@ class _MyCardWidgetState extends State<MyCardWidget> {
           setState(() {
             widget.hide=!widget.hide;
           });
+        },
+        onLongPress: (){
+          widget.longPress(widget.index);
         },
         minLeadingWidth: 0,
         minVerticalPadding: 5,
