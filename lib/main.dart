@@ -1,6 +1,7 @@
 import 'dart:async';
-
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:gsheets/gsheets.dart';
 
 void main() {
@@ -48,7 +49,7 @@ class _MyAppState extends State<MyApp> {
                    Text('JLPT Vocabulary'),
                    Padding(
                      padding: EdgeInsets.only(top: 2),
-                     child: Text('N5 ~ N2',style:TextStyle(fontSize: 15,color: Colors.black)),
+                     child: Text('N5 ~ N2',style:TextStyle(fontSize: 15)),
                    ),
                 ],
               )),
@@ -68,9 +69,8 @@ class GoogleSheetsExample extends StatefulWidget {
 
 class _GoogleSheetsExampleState extends State<GoogleSheetsExample> {
 
-  static const _credentials = "add your credentials";
 
-  final googleSheet = GSheets(_credentials!);
+  late GSheets googleSheet;
   late Spreadsheet dataSheet;
   late List<List<String>> rowData =[];
   List<List<String>> filteredData = [];
@@ -83,8 +83,23 @@ class _GoogleSheetsExampleState extends State<GoogleSheetsExample> {
 
   @override
   void initState() {
-    loadSheet();
+    loadJsonData();
     super.initState();
+  }
+
+  Future<void> loadJsonData() async {
+    try {
+      final String jsonString = await rootBundle.loadString('assets/credentials.json');
+      final Map<String, dynamic> jsonData = json.decode(jsonString);
+      googleSheet = GSheets(jsonData);
+      loadSheet();
+    } catch (error) {
+      final snackBar = SnackBar(
+        content: Text('Error loading JSON or initializing GSheets: $error'),
+        duration: const Duration(seconds: 4), // Set the duration for how long the Snackbar is displayed.
+      );
+      ScaffoldMessenger.of(context).showSnackBar(snackBar);
+    }
   }
 
   void loadSheet()async{
