@@ -44,3 +44,4 @@ app.*.map.json
 /android/app/release
 /assets/credentials.json
 /assets/credentials.json
+/android/app/google-services.json

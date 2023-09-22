@@ -1,13 +1,14 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gsheets/gsheets.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
-
+import 'package:firebase_core/firebase_core.dart';
 import 'memory.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-void main() {
+void main()async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   runApp(MyApp());
 }
 
@@ -68,8 +69,6 @@ class _MyAppState extends State<MyApp> {
               int bookmark = await getBookmark();
               controllers.scrollToIndex(
                 bookmark,
-                preferPosition: AutoScrollPosition.begin,
-                duration: const Duration(milliseconds: 500),
               );
             }, icon: const Icon(Icons.bookmark))
           ],
@@ -98,11 +97,9 @@ class GoogleSheetsExample extends StatefulWidget {
 
 class _GoogleSheetsExampleState extends State<GoogleSheetsExample> {
 
-
-  late GSheets googleSheet;
-  late Spreadsheet dataSheet;
-  late List<List<String>> rowData =[];
-  List<List<String>> filteredData = [];
+  final FirebaseFirestore fireStore = FirebaseFirestore.instance;
+  List<DocumentSnapshot> documents = [];
+  List<DocumentSnapshot> filterDocuments= [];
   final Debouncer _debounce = Debouncer(milliseconds: 500);
   final TextEditingController _searchController = TextEditingController();
   bool _isLoading =false;
@@ -117,48 +114,44 @@ class _GoogleSheetsExampleState extends State<GoogleSheetsExample> {
     super.initState();
   }
 
+  void createDocument({required int id,required String kana,required String romanji,required String definition,required String kanji}) async {
+    await fireStore.collection('vocabulary').add({'id':id,"kana":kana,"romaji":romanji,"definition":definition,"kanji":kanji});
+  }
+
   Future<void> loadJsonData() async {
-    try {
-      final String jsonString = await rootBundle.loadString('assets/credentials.json');
-      final Map<String, dynamic> jsonData = json.decode(jsonString);
-      googleSheet = GSheets(jsonData);
       controller = AutoScrollController(
           viewportBoundaryGetter: () =>
               Rect.fromLTRB(0, 0, 0, MediaQuery.of(context).padding.bottom),
           axis: Axis.vertical);
       widget.scrollController(controller);
-      loadSheet();
-    } catch (error) {
-      final snackBar = SnackBar(
-        content: Text('Error loading JSON or initializing GSheets: $error'),
-        duration: const Duration(seconds: 4), // Set the duration for how long the Snackbar is displayed.
-      );
-      ScaffoldMessenger.of(context).showSnackBar(snackBar);
-    }
+      loadData();
+    // catch (error) {
+    //   final snackBar = SnackBar(
+    //     content: Text('Error loading JSON or initializing GSheets: $error'),
+    //     duration: const Duration(seconds: 4), // Set the duration for how long the Snackbar is displayed.
+    //   );
+    //   ScaffoldMessenger.of(context).showSnackBar(snackBar);
+    // }
   }
 
-  void loadSheet()async{
-    try {
-      setState(() {_isLoading=true;});
-      dataSheet = await googleSheet.spreadsheet("1Q32MTNpLik6Mniol6tS9gGY_HtmRZDmdmd3zskv6hcI");
-      final sheet = dataSheet.sheets[2];
+  void loadData()async{
+      try {
+        setState(() {_isLoading=true;});
+        QuerySnapshot querySnapshot =
+        await fireStore.collection('vocabulary').orderBy('id', descending: false).get();
+        querySnapshot.docs;
+          documents = querySnapshot.docs;
+          filterDocuments = documents;
+          _isLoading =false;
 
-      rowData = await sheet.values.allRows();
+          setState(() {
 
-      // for (var index = 0; index < rowData.length; index++) {
-      //   rowData[index].add(index.toString());
-      // }
-
-      filteredData = List.from(rowData);
-      setState(() {
-        _isLoading =false;
-      });
-
-    } catch (e) {
-      setState(() {
-        _isLoading =false;
-      });
-    }
+          });
+      } catch (e) {
+        setState(() {
+          _isLoading =false;
+        });
+      }
   }
   setBookmark(int value)async{
     await preferencesManager.initPreferences();
@@ -166,23 +159,31 @@ class _GoogleSheetsExampleState extends State<GoogleSheetsExample> {
   }
 
   void performSearch() {
-    setState(() {
-      // Filter the data based on the search term (check if any value in the row contains the search term)
-      filteredData = rowData.where((row) {
-        for (var value in row) {
-          if (value.toLowerCase().contains(_searchController.text.toLowerCase())) {
-            return true; // Return true if any value matches the search term
-          }
-        }
-        return false; // Return false if no values match the search term
-        return false; // Return false if no values match the search term
-      }).toList();
-    });
-    controller.scrollToIndex(0,
-        duration: const Duration(microseconds: 500),
-        preferPosition: AutoScrollPosition.begin);
+    filterDocuments=[];
+    String searchTerm = _searchController.text.toLowerCase();
 
+    for (DocumentSnapshot document in documents) {
+      Map<String, dynamic> data = document.data() as Map<String, dynamic>;
+
+      bool isMatch = false;
+      data.forEach((key, value) {
+        if (value is String && value.toLowerCase().contains(searchTerm)) {
+          isMatch = true;
+        }
+      });
+
+      if (isMatch) {
+        filterDocuments.add(document);
+      }
+    }
+    setState(() {});
+    controller.scrollToIndex(0,
+        duration: const Duration(milliseconds: 500),
+        preferPosition: AutoScrollPosition.begin);
   }
+
+
+
 
 
   @override
@@ -265,17 +266,17 @@ class _GoogleSheetsExampleState extends State<GoogleSheetsExample> {
            ),
          ),
          Expanded(
-           child:filteredData.isNotEmpty? Scrollbar(
+           child:filterDocuments.isNotEmpty? Scrollbar(
              child: ListView.builder(
                controller: controller,
-              itemCount: filteredData.length,
+              itemCount: filterDocuments.length,
               itemBuilder: (context, index) {
-                final row = filteredData[index];
+                final row = filterDocuments[index];
                 return AutoScrollTag(
                   key: ValueKey(index),
                   controller: controller,
                     index: index,
-                    child: MyCardWidget(index: index, row: row,hide: hideAll,longPress: (int value){
+                    child: MyCardWidget(index: index, documentSnapshot: row,hide: hideAll,longPress: (int value){
                       setBookmark(value);
                     },));
               },
@@ -355,13 +356,13 @@ class Debouncer {
 
 class MyCardWidget extends StatefulWidget {
   final int index;
-  final List<dynamic> row;
+  final DocumentSnapshot documentSnapshot;
   bool hide;
   Function longPress;
 
   MyCardWidget({
     required this.index,
-    required this.row,
+    required this.documentSnapshot,
     required this.hide,
     required this.longPress,
   });
@@ -371,26 +372,28 @@ class MyCardWidget extends StatefulWidget {
 }
 
 class _MyCardWidgetState extends State<MyCardWidget> {
-
   @override
   Widget build(BuildContext context) {
+    // Access data from the DocumentSnapshot
+    final data = widget.documentSnapshot.data() as Map<String, dynamic>;
+
     return Card(
       elevation: 5,
       child: ListTile(
-        onTap: (){
+        onTap: () {
           setState(() {
-            widget.hide=!widget.hide;
+            widget.hide = !widget.hide;
           });
         },
-        onLongPress: (){
+        onLongPress: () {
           widget.longPress(widget.index);
         },
         minLeadingWidth: 0,
         minVerticalPadding: 5,
         leading: Text("${widget.index + 1}. "),
-        title: Text("${widget.row[1]}   [ ${widget.row[2]} ]"),
-        subtitle: widget.hide?null:Text(widget.row[4]),
-        trailing: Text(widget.row[3]), // Join the data with commas for display
+        title: Text("${data['kana']}   [ ${data['romaji']} ]"),
+        subtitle: widget.hide ? null : Text(data['definition']),
+        trailing: Text(data['kanji']),
       ),
     );
   }
