@@ -68,7 +68,8 @@ class _MyAppState extends State<MyApp> {
             IconButton(onPressed: ()async{
               int bookmark = await getBookmark();
               controllers.scrollToIndex(
-                bookmark,
+                bookmark, duration: const Duration(milliseconds: 500),
+              preferPosition: AutoScrollPosition.begin
               );
             }, icon: const Icon(Icons.bookmark))
           ],
